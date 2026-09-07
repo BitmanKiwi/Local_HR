@@ -1,0 +1,4 @@
+openant
+fastapi
+uvicorn[standard]
+libusb-package

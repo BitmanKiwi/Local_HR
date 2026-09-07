@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Heart Rate</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0c0e;
+    --bg-edge: #101317;
+    --pulse: #ff5a5f;
+    --pulse-dim: #4a3436;
+    --label: #55606b;
+    --label-dim: #333a41;
+    --dot-live: #3ddc84;
+    --dot-search: #d9a441;
+    --dot-lost: #55606b;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    height: 100%;
+    margin: 0;
+    background: radial-gradient(ellipse at center, var(--bg-edge) 0%, var(--bg) 70%);
+    font-family: 'Space Grotesk', system-ui, sans-serif;
+    overflow: hidden;
+  }
+
+  body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .display {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    user-select: none;
+  }
+
+  .bpm-row {
+    display: flex;
+    align-items: baseline;
+    gap: clamp(0.75rem, 2vw, 1.5rem);
+  }
+
+  .bpm-number {
+    font-size: clamp(8rem, 32vw, 26rem);
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: -0.03em;
+    font-variant-numeric: tabular-nums;
+    color: var(--pulse);
+    min-width: 2ch;
+    text-align: center;
+    transition: color 0.6s ease, opacity 0.6s ease;
+  }
+
+  .bpm-unit {
+    font-size: clamp(1.25rem, 3vw, 2.25rem);
+    font-weight: 500;
+    color: var(--label);
+    transition: color 0.6s ease;
+    padding-bottom: clamp(1rem, 4vw, 2.5rem);
+  }
+
+  .display.stale .bpm-number { color: var(--pulse-dim); }
+  .display.stale .bpm-unit { color: var(--label-dim); }
+
+  .status {
+    position: fixed;
+    bottom: 2.5rem;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    color: var(--label);
+    font-size: 0.95rem;
+    font-weight: 400;
+    letter-spacing: 0.01em;
+  }
+
+  .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--dot-lost);
+    transition: background 0.4s ease;
+  }
+
+  .status-dot.live { background: var(--dot-live); }
+  .status-dot.searching { background: var(--dot-search); }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .bpm-number, .bpm-unit, .status-dot { transition-duration: 0.6s; }
+  }
+</style>
+</head>
+<body>
+
+<div class="display" id="display">
+  <div class="bpm-row">
+    <div class="bpm-number" id="bpmNumber">&ndash;&ndash;</div>
+    <div class="bpm-unit">bpm</div>
+  </div>
+</div>
+
+<div class="status">
+  <div class="status-dot" id="statusDot"></div>
+  <span id="statusText">connecting&hellip;</span>
+</div>
+
+<script>
+  const bpmNumber = document.getElementById('bpmNumber');
+  const display = document.getElementById('display');
+  const statusDot = document.getElementById('statusDot');
+  const statusText = document.getElementById('statusText');
+
+  const STALE_AFTER_MS = 6000;
+  let lastUpdate = 0;
+  let socket = null;
+
+  function setStatus(mode, text) {
+    statusDot.className = 'status-dot' + (mode ? ' ' + mode : '');
+    statusText.textContent = text;
+  }
+
+  function connect() {
+    socket = new WebSocket(`ws://${location.host}/ws`);
+
+    socket.onopen = () => setStatus('searching', 'connected to server');
+
+    socket.onmessage = (event) => {
+      const msg = JSON.parse(event.data);
+
+      if (msg.type === 'hr') {
+        bpmNumber.textContent = msg.bpm;
+        display.classList.remove('stale');
+        lastUpdate = Date.now();
+        setStatus('live', 'live');
+      } else if (msg.type === 'status') {
+        if (msg.message === 'connected') {
+          setStatus('live', 'live');
+        } else if (msg.message.includes('searching')) {
+          setStatus('searching', 'searching for strap\u2026');
+        } else {
+          setStatus('', msg.message);
+        }
+      }
+    };
+
+    socket.onclose = () => {
+      setStatus('', 'reconnecting\u2026');
+      setTimeout(connect, 2000);
+    };
+
+    socket.onerror = () => socket.close();
+  }
+
+  setInterval(() => {
+    if (lastUpdate && Date.now() - lastUpdate > STALE_AFTER_MS) {
+      display.classList.add('stale');
+      setStatus('', 'signal lost');
+    }
+  }, 1000);
+
+  connect();
+</script>
+
+</body>
+</html>
